@@ -1,29 +1,31 @@
-import hashlib
-import os
-import shutil
-import tempfile
+from hashlib import file_digest
+from os import environ
 from pathlib import Path
+from shutil import copyfile
+from tempfile import TemporaryDirectory
+
+
+def sha256(path: Path) -> bytes:
+    with path.open("rb") as image:
+        return file_digest(image, "sha256").digest()
 
 
 def main() -> None:
     source = Path(__file__).resolve().with_name("entry.png")
-    output_dir = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
+    output_dir = Path(environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
     output_dir.mkdir(parents=True, exist_ok=True)
     destination = output_dir / "entry.png"
+    source_digest = sha256(source)
 
-    with tempfile.TemporaryDirectory(dir=output_dir, prefix=".entry-") as staging_dir:
-        staged = Path(staging_dir) / "entry.png"
-        shutil.copyfile(source, staged)
-        with source.open("rb") as original, staged.open("rb") as copied:
-            expected = hashlib.file_digest(original, "sha256").digest()
-            actual = hashlib.file_digest(copied, "sha256").digest()
-        if actual != expected:
-            raise RuntimeError("SHA-256 mismatch while copying entry.png")
+    with TemporaryDirectory(dir=output_dir) as staging_dir:
+        copied_image = Path(staging_dir) / destination.name
+        copyfile(source, copied_image)
+        if sha256(copied_image) != source_digest:
+            raise RuntimeError(f"SHA-256 mismatch while copying {source} to {destination}")
+        byte_count = copied_image.stat().st_size
+        copied_image.replace(destination)
 
-        byte_count = staged.stat().st_size
-        staged.replace(destination)
-
-    print(f"Copied and verified {byte_count} bytes to {destination}")
+    print(f"Verified {destination} ({byte_count} bytes)")
 
 
 if __name__ == "__main__":
